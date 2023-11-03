@@ -1,0 +1,68 @@
+From: Nicolas Dandrimont <olasd@debian.org>
+Date: Tue, 8 Aug 2023 17:06:18 +0200
+Subject: Replace US/Pacific with America/Los_Angeles
+
+Needed for recent tzdata versions
+---
+ tests/x509/test_x509.py                    | 4 ++--
+ tests/x509/test_x509_crlbuilder.py         | 4 ++--
+ tests/x509/test_x509_revokedcertbuilder.py | 2 +-
+ 3 files changed, 5 insertions(+), 5 deletions(-)
+
+diff --git a/tests/x509/test_x509.py b/tests/x509/test_x509.py
+index aecf6f8..4d496c6 100644
+--- a/tests/x509/test_x509.py
++++ b/tests/x509/test_x509.py
+@@ -2445,7 +2445,7 @@ class TestCertificateBuilder:
+ 
+     def test_aware_not_valid_after(self, backend):
+         time = datetime.datetime(2012, 1, 16, 22, 43)
+-        tz = pytz.timezone("US/Pacific")
++        tz = pytz.timezone("America/Los_Angeles")
+         time = tz.localize(time)
+         utc_time = datetime.datetime(2012, 1, 17, 6, 43)
+         private_key = RSA_KEY_2048.private_key(backend)
+@@ -2517,7 +2517,7 @@ class TestCertificateBuilder:
+ 
+     def test_aware_not_valid_before(self, backend):
+         time = datetime.datetime(2012, 1, 16, 22, 43)
+-        tz = pytz.timezone("US/Pacific")
++        tz = pytz.timezone("America/Los_Angeles")
+         time = tz.localize(time)
+         utc_time = datetime.datetime(2012, 1, 17, 6, 43)
+         private_key = RSA_KEY_2048.private_key(backend)
+diff --git a/tests/x509/test_x509_crlbuilder.py b/tests/x509/test_x509_crlbuilder.py
+index e3e3428..d5083c2 100644
+--- a/tests/x509/test_x509_crlbuilder.py
++++ b/tests/x509/test_x509_crlbuilder.py
+@@ -42,7 +42,7 @@ class TestCertificateRevocationListBuilder:
+ 
+     def test_aware_last_update(self, backend):
+         last_time = datetime.datetime(2012, 1, 16, 22, 43)
+-        tz = pytz.timezone("US/Pacific")
++        tz = pytz.timezone("America/Los_Angeles")
+         last_time = tz.localize(last_time)
+         utc_last = datetime.datetime(2012, 1, 17, 6, 43)
+         next_time = datetime.datetime(2022, 1, 17, 6, 43)
+@@ -84,7 +84,7 @@ class TestCertificateRevocationListBuilder:
+ 
+     def test_aware_next_update(self, backend):
+         next_time = datetime.datetime(2022, 1, 16, 22, 43)
+-        tz = pytz.timezone("US/Pacific")
++        tz = pytz.timezone("America/Los_Angeles")
+         next_time = tz.localize(next_time)
+         utc_next = datetime.datetime(2022, 1, 17, 6, 43)
+         last_time = datetime.datetime(2012, 1, 17, 6, 43)
+diff --git a/tests/x509/test_x509_revokedcertbuilder.py b/tests/x509/test_x509_revokedcertbuilder.py
+index b2facfa..f047c5c 100644
+--- a/tests/x509/test_x509_revokedcertbuilder.py
++++ b/tests/x509/test_x509_revokedcertbuilder.py
+@@ -60,7 +60,7 @@ class TestRevokedCertificateBuilder:
+ 
+     def test_aware_revocation_date(self, backend):
+         time = datetime.datetime(2012, 1, 16, 22, 43)
+-        tz = pytz.timezone("US/Pacific")
++        tz = pytz.timezone("America/Los_Angeles")
+         time = tz.localize(time)
+         utc_time = datetime.datetime(2012, 1, 17, 6, 43)
+         serial_number = 333
