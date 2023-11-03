@@ -1,0 +1,80 @@
+From: Peter Michael Green <plugwash@debian.org>
+Date: Sun, 25 Jun 2023 03:03:03 +0100
+Subject: Upgrade-to-pyo3-0.19
+
+This patch is based on the upstream commit described below, adapted for use
+in the Debian package by Peter Michael Green.
+
+commit b1cfa3adef986ef3466b080263911e8d79ec6141
+Author: Alex Gaynor <alex.gaynor@gmail.com>
+Date:   Wed May 31 16:27:10 2023 -0400
+
+    pyo3 0.19 (#8999)
+    
+    * Bump pyo3 from 0.18.3 to 0.19.0 in /src/rust
+    
+    Bumps [pyo3](https://github.com/pyo3/pyo3) from 0.18.3 to 0.19.0.
+    - [Release notes](https://github.com/pyo3/pyo3/releases)
+    - [Changelog](https://github.com/PyO3/pyo3/blob/main/CHANGELOG.md)
+    - [Commits](https://github.com/pyo3/pyo3/compare/v0.18.3...v0.19.0)
+    
+    ---
+    updated-dependencies:
+    - dependency-name: pyo3
+      dependency-type: direct:production
+      update-type: version-update:semver-minor
+    ...
+    
+    Signed-off-by: dependabot[bot] <support@github.com>
+    
+    * pyo3 0.19
+    
+    ---------
+    
+    Signed-off-by: dependabot[bot] <support@github.com>
+    Co-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>
+---
+ src/rust/Cargo.toml             | 2 +-
+ src/rust/src/x509/crl.rs        | 2 +-
+ src/rust/src/x509/extensions.rs | 2 +-
+ 3 files changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/src/rust/Cargo.toml b/src/rust/Cargo.toml
+index 8327b25..f77390a 100644
+--- a/src/rust/Cargo.toml
++++ b/src/rust/Cargo.toml
+@@ -7,7 +7,7 @@ publish = false
+ 
+ [dependencies]
+ once_cell = "1"
+-pyo3 = { version = "0.17" }
++pyo3 = { version = "0.19" }
+ asn1 = { version = "0.12", default-features = false, features = ["derive"] }
+ pem = ">= 1.0, < 1.2"
+ chrono = { version = "0.4", default-features = false, features = ["alloc", "clock"] }
+diff --git a/src/rust/src/x509/crl.rs b/src/rust/src/x509/crl.rs
+index 832c8be..6d49fb5 100644
+--- a/src/rust/src/x509/crl.rs
++++ b/src/rust/src/x509/crl.rs
+@@ -145,7 +145,7 @@ impl CertificateRevocationList {
+             });
+         });
+ 
+-        if idx.is_instance_of::<pyo3::types::PySlice>()? {
++        if idx.is_instance_of::<pyo3::types::PySlice>() {
+             let indices = idx
+                 .downcast::<pyo3::types::PySlice>()?
+                 .indices(self.len().try_into().unwrap())?;
+diff --git a/src/rust/src/x509/extensions.rs b/src/rust/src/x509/extensions.rs
+index e5db68a..474ad82 100644
+--- a/src/rust/src/x509/extensions.rs
++++ b/src/rust/src/x509/extensions.rs
+@@ -228,7 +228,7 @@ pub(crate) fn encode_extension(
+                     let mut qualifiers = vec![];
+                     for py_qualifier in py_policy_qualifiers.iter()? {
+                         let py_qualifier = py_qualifier?;
+-                        let qualifier = if py_qualifier.is_instance_of::<pyo3::types::PyString>()? {
++                        let qualifier = if py_qualifier.is_instance_of::<pyo3::types::PyString>() {
+                             let cps_uri = match asn1::IA5String::new(py_qualifier.extract()?) {
+                                 Some(s) => s,
+                                 None => {
