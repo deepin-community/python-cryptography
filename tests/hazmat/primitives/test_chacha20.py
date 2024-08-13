@@ -11,8 +11,8 @@ import pytest
 
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms
 
-from .utils import _load_all_params
 from ...utils import load_nist_vectors
+from .utils import _load_all_params
 
 
 @pytest.mark.supported(
@@ -26,14 +26,14 @@ class TestChaCha20:
         "vector",
         _load_all_params(
             os.path.join("ciphers", "ChaCha20"),
-            ["rfc7539.txt"],
+            ["counter-overflow.txt", "rfc7539.txt"],
             load_nist_vectors,
         ),
     )
     def test_vectors(self, vector, backend):
         key = binascii.unhexlify(vector["key"])
         nonce = binascii.unhexlify(vector["nonce"])
-        ibc = struct.pack("<i", int(vector["initial_block_counter"]))
+        ibc = struct.pack("<Q", int(vector["initial_block_counter"]))
         pt = binascii.unhexlify(vector["plaintext"])
         encryptor = Cipher(
             algorithms.ChaCha20(key, ibc + nonce), None, backend
@@ -69,3 +69,24 @@ class TestChaCha20:
     def test_invalid_key_type(self):
         with pytest.raises(TypeError, match="key must be bytes"):
             algorithms.ChaCha20("0" * 32, b"0" * 16)  # type:ignore[arg-type]
+
+    def test_partial_blocks(self, backend):
+        # Test that partial blocks and counter increments are handled
+        # correctly. Successive calls to update should return the same
+        # as if the entire input was passed in a single call:
+        # update(pt[0:n]) + update(pt[n:m]) + update(pt[m:]) == update(pt)
+        key = bytearray(os.urandom(32))
+        nonce = bytearray(os.urandom(16))
+        cipher = Cipher(algorithms.ChaCha20(key, nonce), None, backend)
+        pt = bytearray(os.urandom(96 * 3))
+
+        enc_full = cipher.encryptor()
+        ct_full = enc_full.update(pt)
+
+        enc_partial = cipher.encryptor()
+        len_partial = len(pt) // 3
+        ct_partial_1 = enc_partial.update(pt[:len_partial])
+        ct_partial_2 = enc_partial.update(pt[len_partial : len_partial * 2])
+        ct_partial_3 = enc_partial.update(pt[len_partial * 2 :])
+
+        assert ct_full == ct_partial_1 + ct_partial_2 + ct_partial_3
