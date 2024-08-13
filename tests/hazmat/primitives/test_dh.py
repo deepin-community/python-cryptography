@@ -13,9 +13,9 @@ import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import dh
 
-from .fixtures_dh import FFDH3072_P
 from ...doubles import DummyKeySerializationEncryption
 from ...utils import load_nist_vectors, load_vectors_from_file
+from .fixtures_dh import FFDH3072_P
 
 # RFC 3526
 P_1536 = int(
@@ -147,6 +147,10 @@ class TestDH:
     def test_unsupported_generator_generate_dh(self, backend):
         with pytest.raises(ValueError):
             dh.generate_parameters(7, 512, backend)
+
+    def test_large_key_generate_dh(self, backend):
+        with pytest.raises(ValueError):
+            dh.generate_parameters(2, 1 << 30)
 
     @pytest.mark.skip_fips(reason="non-FIPS parameters")
     def test_dh_parameters_supported(self, backend):
@@ -459,6 +463,31 @@ class TestDH:
 
         assert int.from_bytes(symkey1, "big") == int(vector["z"], 16)
         assert int.from_bytes(symkey2, "big") == int(vector["z"], 16)
+
+    @pytest.mark.supported(
+        only_if=lambda backend: backend.dh_x942_serialization_supported(),
+        skip_message="DH X9.42 not supported",
+    )
+    def test_public_key_equality(self, backend):
+        key_bytes = load_vectors_from_file(
+            os.path.join("asymmetric", "DH", "dhpub.pem"),
+            lambda pemfile: pemfile.read(),
+            mode="rb",
+        )
+        key_bytes_2 = load_vectors_from_file(
+            os.path.join("asymmetric", "DH", "dhpub_rfc5114_2.pem"),
+            lambda pemfile: pemfile.read(),
+            mode="rb",
+        )
+        key1 = serialization.load_pem_public_key(key_bytes)
+        key2 = serialization.load_pem_public_key(key_bytes)
+        key3 = serialization.load_pem_public_key(key_bytes_2)
+        assert key1 == key2
+        assert key1 != key3
+        assert key1 != object()
+
+        with pytest.raises(TypeError):
+            key1 < key2  # type: ignore[operator]
 
 
 @pytest.mark.supported(

@@ -2,6 +2,7 @@
 # 2.0, and the BSD License. See the LICENSE file in the root of this repository
 # for complete details.
 
+from __future__ import annotations
 
 INCLUDES = """
 #include <openssl/pkcs7.h>
@@ -42,24 +43,11 @@ typedef struct {
     ...;
 } PKCS7;
 
-static const int PKCS7_BINARY;
-static const int PKCS7_DETACHED;
-static const int PKCS7_NOATTR;
-static const int PKCS7_NOCERTS;
-static const int PKCS7_NOCHAIN;
-static const int PKCS7_NOINTERN;
-static const int PKCS7_NOSIGS;
-static const int PKCS7_NOSMIMECAP;
-static const int PKCS7_NOVERIFY;
-static const int PKCS7_STREAM;
 static const int PKCS7_TEXT;
-static const int PKCS7_PARTIAL;
 """
 
 FUNCTIONS = """
 void PKCS7_free(PKCS7 *);
-PKCS7 *PKCS7_sign(X509 *, EVP_PKEY *, Cryptography_STACK_OF_X509 *,
-                   BIO *, int);
 int SMIME_write_PKCS7(BIO *, PKCS7 *, BIO *, int);
 int PEM_write_bio_PKCS7_stream(BIO *, PKCS7 *, BIO *, int);
 PKCS7_SIGNER_INFO *PKCS7_sign_add_signer(PKCS7 *, X509 *, EVP_PKEY *,

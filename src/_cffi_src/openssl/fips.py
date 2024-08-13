@@ -2,6 +2,7 @@
 # 2.0, and the BSD License. See the LICENSE file in the root of this repository
 # for complete details.
 
+from __future__ import annotations
 
 INCLUDES = """
 #include <openssl/crypto.h>
@@ -17,7 +18,7 @@ int FIPS_mode(void);
 """
 
 CUSTOMIZATIONS = """
-#if CRYPTOGRAPHY_LIBRESSL_LESS_THAN_350 || CRYPTOGRAPHY_OPENSSL_300_OR_GREATER
+#if CRYPTOGRAPHY_OPENSSL_300_OR_GREATER
 static const long Cryptography_HAS_FIPS = 0;
 int (*FIPS_mode_set)(int) = NULL;
 int (*FIPS_mode)(void) = NULL;

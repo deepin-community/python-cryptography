@@ -10,9 +10,9 @@ import pytest
 
 from cryptography.hazmat.primitives.ciphers import algorithms, base, modes
 
-from .utils import _load_all_params, generate_encrypt_test
 from ...doubles import DummyMode
 from ...utils import load_nist_vectors
+from .utils import _load_all_params, generate_encrypt_test
 
 
 @pytest.mark.supported(
@@ -61,9 +61,7 @@ class TestAESModeXTS:
             enc.update(b"0" * 15)
 
     @pytest.mark.supported(
-        only_if=lambda backend: (
-            backend._lib.CRYPTOGRAPHY_OPENSSL_111D_OR_GREATER
-        ),
+        only_if=lambda backend: (not backend._lib.CRYPTOGRAPHY_IS_LIBRESSL),
         skip_message="duplicate key encryption error added in OpenSSL 1.1.1d",
     )
     def test_xts_no_duplicate_keys_encryption(self, backend):
@@ -274,7 +272,7 @@ def test_buffer_protocol_alternate_modes(mode, backend):
     data = bytearray(b"sixteen_byte_msg")
     key = algorithms.AES(bytearray(os.urandom(32)))
     if not backend.cipher_supported(key, mode):
-        pytest.skip("AES in {} mode not supported".format(mode.name))
+        pytest.skip(f"AES in {mode.name} mode not supported")
     cipher = base.Cipher(key, mode, backend)
     enc = cipher.encryptor()
     ct = enc.update(data) + enc.finalize()
@@ -298,7 +296,7 @@ def test_buffer_protocol_alternate_modes(mode, backend):
 def test_alternate_aes_classes(mode, alg_cls, backend):
     alg = alg_cls(b"0" * (alg_cls.key_size // 8))
     if not backend.cipher_supported(alg, mode):
-        pytest.skip("AES in {} mode not supported".format(mode.name))
+        pytest.skip(f"AES in {mode.name} mode not supported")
     data = bytearray(b"sixteen_byte_msg")
     cipher = base.Cipher(alg, mode, backend)
     enc = cipher.encryptor()

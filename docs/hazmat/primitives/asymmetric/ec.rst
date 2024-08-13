@@ -187,22 +187,6 @@ Elliptic Curve Signature Algorithms
         :raises ValueError: Raised if the point is invalid for the curve.
         :returns: A new instance of :class:`EllipticCurvePublicKey`.
 
-    .. method:: encode_point()
-
-        .. warning::
-
-            This method is deprecated as of version 2.5. Callers should migrate
-            to using
-            :meth:`~cryptography.hazmat.primitives.asymmetric.ec.EllipticCurvePublicKey.public_bytes`.
-
-        .. versionadded:: 1.1
-
-        Encodes an elliptic curve point to a byte string as described in
-        `SEC 1 v2.0`_ section 2.3.3. This method only supports uncompressed
-        points.
-
-        :return bytes: The encoded point.
-
     .. classmethod:: from_encoded_point(curve, data)
 
         .. versionadded:: 1.1
@@ -550,11 +534,7 @@ Key Interfaces
 
     .. versionadded:: 0.5
 
-    An elliptic curve private key for use with an algorithm such as `ECDSA`_ or
-    `EdDSA`_. An elliptic curve private key that is not an
-    :term:`opaque key` also implements
-    :class:`EllipticCurvePrivateKeyWithSerialization` to provide serialization
-    methods.
+    An elliptic curve private key for use with an algorithm such as `ECDSA`_.
 
     .. method:: exchange(algorithm, peer_public_key)
 
@@ -648,13 +628,6 @@ Key Interfaces
         :return bytes: Serialized key.
 
 
-.. class:: EllipticCurvePrivateKeyWithSerialization
-
-    .. versionadded:: 0.8
-
-    Alias for :class:`EllipticCurvePrivateKey`.
-
-
 .. class:: EllipticCurvePublicKey
 
     .. versionadded:: 0.5
@@ -715,6 +688,7 @@ Key Interfaces
         :param signature_algorithm: An instance of
             :class:`EllipticCurveSignatureAlgorithm`.
 
+        :returns: None
         :raises cryptography.exceptions.InvalidSignature: If the signature does
             not validate.
 
@@ -747,13 +721,6 @@ Key Interfaces
 
         :raises TypeError: Raised when curve is not an
             :class:`~cryptography.hazmat.primitives.asymmetric.ec.EllipticCurve`.
-
-
-.. class:: EllipticCurvePublicKeyWithSerialization
-
-    .. versionadded:: 0.6
-
-    Alias for :class:`EllipticCurvePublicKey`.
 
 
 
@@ -952,7 +919,6 @@ Elliptic Curve Object Identifiers
 .. _`minimize the number of security concerns for elliptic-curve cryptography`: https://cr.yp.to/ecdh/curve25519-20060209.pdf
 .. _`SafeCurves`: https://safecurves.cr.yp.to/
 .. _`ECDSA`: https://en.wikipedia.org/wiki/ECDSA
-.. _`EdDSA`: https://en.wikipedia.org/wiki/EdDSA
 .. _`forward secrecy`: https://en.wikipedia.org/wiki/Forward_secrecy
 .. _`SEC 1 v2.0`: https://www.secg.org/sec1-v2.pdf
 .. _`bad cryptographic practice`: https://crypto.stackexchange.com/a/3313

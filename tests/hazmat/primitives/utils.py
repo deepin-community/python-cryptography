@@ -26,12 +26,11 @@ from cryptography.hazmat.primitives.ciphers import (
 from cryptography.hazmat.primitives.ciphers.modes import GCM
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF, HKDFExpand
 from cryptography.hazmat.primitives.kdf.kbkdf import (
-    CounterLocation,
     KBKDFCMAC,
     KBKDFHMAC,
+    CounterLocation,
     Mode,
 )
-from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
 from ...utils import load_vectors_from_file
 
@@ -103,10 +102,11 @@ def aead_test(backend, cipher_factory, mode_factory, params):
         # hex encoded.
         pytest.skip("Non-96-bit IVs unsupported in FIPS mode.")
 
+    tag = binascii.unhexlify(params["tag"])
     mode = mode_factory(
         binascii.unhexlify(params["iv"]),
-        binascii.unhexlify(params["tag"]),
-        len(binascii.unhexlify(params["tag"])),
+        tag,
+        len(tag),
     )
     assert isinstance(mode, GCM)
     if params.get("pt") is not None:
@@ -134,14 +134,13 @@ def aead_test(backend, cipher_factory, mode_factory, params):
         encryptor.authenticate_additional_data(aad)
         actual_ciphertext = encryptor.update(plaintext)
         actual_ciphertext += encryptor.finalize()
-        tag_len = len(binascii.unhexlify(params["tag"]))
-        assert binascii.hexlify(encryptor.tag[:tag_len]) == params["tag"]
+        assert encryptor.tag[: len(tag)] == tag
         cipher = Cipher(
             cipher_factory(binascii.unhexlify(params["key"])),
             mode_factory(
                 binascii.unhexlify(params["iv"]),
-                binascii.unhexlify(params["tag"]),
-                min_tag_length=tag_len,
+                tag,
+                min_tag_length=len(tag),
             ),
             backend,
         )
@@ -210,7 +209,6 @@ def base_hash_test(backend, algorithm, digest_size):
     assert m.algorithm.digest_size == digest_size
     m_copy = m.copy()
     assert m != m_copy
-    assert m._ctx != m_copy._ctx
 
     m.update(b"abc")
     copy = m.copy()
@@ -231,7 +229,6 @@ def base_hmac_test(backend, algorithm):
     h = hmac.HMAC(binascii.unhexlify(key), algorithm, backend=backend)
     h_copy = h.copy()
     assert h != h_copy
-    assert h._ctx != h_copy._ctx
 
 
 def generate_hmac_test(param_loader, path, file_names, algorithm):
@@ -248,30 +245,6 @@ def hmac_test(backend, algorithm, params):
     h = hmac.HMAC(binascii.unhexlify(key), algorithm, backend=backend)
     h.update(binascii.unhexlify(msg))
     assert h.finalize() == binascii.unhexlify(md.encode("ascii"))
-
-
-def generate_pbkdf2_test(param_loader, path, file_names, algorithm):
-    def test_pbkdf2(self, backend, subtests):
-        for params in _load_all_params(path, file_names, param_loader):
-            with subtests.test():
-                pbkdf2_test(backend, algorithm, params)
-
-    return test_pbkdf2
-
-
-def pbkdf2_test(backend, algorithm, params):
-    # Password and salt can contain \0, which should be loaded as a null char.
-    # The NIST loader loads them as literal strings so we replace with the
-    # proper value.
-    kdf = PBKDF2HMAC(
-        algorithm,
-        int(params["length"]),
-        params["salt"],
-        int(params["iterations"]),
-        backend,
-    )
-    derived_key = kdf.derive(params["password"])
-    assert binascii.hexlify(derived_key) == params["derived_key"]
 
 
 def generate_aead_exception_test(cipher_factory, mode_factory):
@@ -572,8 +545,3 @@ def skip_fips_traditional_openssl(backend, fmt):
         pytest.skip(
             "Traditional OpenSSL key format is not supported in FIPS mode."
         )
-
-
-def skip_signature_hash(backend, hash_alg: hashes.HashAlgorithm):
-    if not backend.signature_hash_supported(hash_alg):
-        pytest.skip(f"{hash_alg} is not a supported signature hash algorithm.")

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # This file is dual licensed under the terms of the Apache License, Version
 # 2.0, and the BSD License. See the LICENSE file in the root of this repository
 # for complete details.
@@ -21,6 +20,16 @@ def test_aki_public_bytes(benchmark):
         authority_cert_serial_number=None,
     )
     benchmark(aki.public_bytes)
+
+
+def test_load_der_certificate(benchmark):
+    cert_bytes = load_vectors_from_file(
+        os.path.join("x509", "PKITS_data", "certs", "GoodCACert.crt"),
+        loader=lambda pemfile: pemfile.read(),
+        mode="rb",
+    )
+
+    benchmark(x509.load_der_x509_certificate, cert_bytes)
 
 
 def test_load_pem_certificate(benchmark):

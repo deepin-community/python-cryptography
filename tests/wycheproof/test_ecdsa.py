@@ -13,7 +13,6 @@ from cryptography.hazmat.primitives.asymmetric import ec
 
 from .utils import wycheproof_tests
 
-
 _DIGESTS = {
     "SHA-1": hashes.SHA1(),
     "SHA-224": hashes.SHA224(),
@@ -54,11 +53,19 @@ _DIGESTS = {
     "ecdsa_secp384r1_sha3_512_test.json",
     "ecdsa_secp521r1_sha512_test.json",
     "ecdsa_secp521r1_sha3_512_test.json",
+    "ecdsa_secp160k1_sha256_test.json",
+    "ecdsa_secp160r1_sha256_test.json",
+    "ecdsa_secp160r2_sha256_test.json",
+    "ecdsa_secp192k1_sha256_test.json",
+    "ecdsa_secp192r1_sha256_test.json",
 )
 def test_ecdsa_signature(backend, wycheproof):
     try:
-        key = serialization.load_der_public_key(
-            binascii.unhexlify(wycheproof.testgroup["keyDer"]), backend
+        key = wycheproof.cache_value_to_group(
+            "cache_key",
+            lambda: serialization.load_der_public_key(
+                binascii.unhexlify(wycheproof.testgroup["keyDer"])
+            ),
         )
         assert isinstance(key, ec.EllipticCurvePublicKey)
     except (UnsupportedAlgorithm, ValueError):
@@ -73,7 +80,7 @@ def test_ecdsa_signature(backend, wycheproof):
     digest = _DIGESTS[wycheproof.testgroup["sha"]]
 
     if not backend.hash_supported(digest):
-        pytest.skip("Hash {} not supported".format(digest))
+        pytest.skip(f"Hash {digest} not supported")
 
     if wycheproof.valid or (
         wycheproof.acceptable and not wycheproof.has_flag("MissingZero")

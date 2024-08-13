@@ -10,6 +10,7 @@ import re
 import shutil
 import subprocess
 import sys
+import warnings
 
 from setuptools import setup
 
@@ -30,6 +31,11 @@ except ImportError:
     raise
 
 
+# distutils emits this warning if you pass `setup()` an unknown option. This
+# is what happens if you somehow run this file without `cffi` installed:
+# `cffi_modules` is an unknown option.
+warnings.filterwarnings("error", message="Unknown distribution option")
+
 base_dir = os.path.dirname(__file__)
 src_dir = os.path.join(base_dir, "src")
 
@@ -37,24 +43,18 @@ src_dir = os.path.join(base_dir, "src")
 # means that we need to add the src/ directory to the sys.path.
 sys.path.insert(0, src_dir)
 
+if hasattr(sys, "pypy_version_info") and sys.pypy_version_info < (7, 3, 10):
+    raise RuntimeError("cryptography is not compatible with PyPy3 < 7.3.10")
+
 try:
-    # See setup.cfg for most of the config metadata.
+    # See pyproject.toml for most of the config metadata.
     setup(
-        cffi_modules=[
-            "src/_cffi_src/build_openssl.py:ffi",
-        ],
         rust_extensions=[
             RustExtension(
                 "cryptography.hazmat.bindings._rust",
                 "src/rust/Cargo.toml",
                 py_limited_api=True,
-                # Enable abi3 mode if we're not using PyPy.
-                features=(
-                    []
-                    if platform.python_implementation() == "PyPy"
-                    else ["pyo3/abi3-py36"]
-                ),
-                rust_version=">=1.48.0",
+                rust_version=">=1.56.0",
             )
         ],
     )

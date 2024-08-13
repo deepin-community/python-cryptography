@@ -3,6 +3,7 @@
 # for complete details.
 
 
+import email.parser
 import os
 import typing
 
@@ -14,7 +15,6 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ed25519, rsa
 from cryptography.hazmat.primitives.serialization import pkcs7
 
-from .utils import skip_signature_hash
 from ...utils import load_vectors_from_file, raises_unsupported_algorithm
 
 
@@ -89,6 +89,12 @@ class TestPKCS7Loading:
                 mode="rb",
             )
 
+    def test_load_pkcs7_empty_certificates(self, backend):
+        der = b"\x30\x0B\x06\x09\x2A\x86\x48\x86\xF7\x0D\x01\x07\x02"
+
+        certificates = pkcs7.load_der_pkcs7_certificates(der)
+        assert certificates == []
+
 
 # We have no public verification API and won't be adding one until we get
 # some requirements from users so this function exists to give us basic
@@ -133,8 +139,11 @@ def _pkcs7_verify(encoding, sig, msg, certs, options, backend):
         )
     else:
         msg_bio = backend._bytes_to_bio(msg)
+        # libressl 3.7.0 has a bug when NULL is passed as an `out_bio`. Work
+        # around it for now.
+        out_bio = backend._create_mem_bio_gc()
         res = backend._lib.PKCS7_verify(
-            p7, backend._ffi.NULL, store, msg_bio.bio, backend._ffi.NULL, flags
+            p7, backend._ffi.NULL, store, msg_bio.bio, out_bio, flags
         )
     backend.openssl_assert(res == 1)
     # OpenSSL 3.0 leaves a random bio error on the stack:
@@ -147,7 +156,7 @@ def _load_cert_key():
     key = load_vectors_from_file(
         os.path.join("x509", "custom", "ca", "ca_key.pem"),
         lambda pemfile: serialization.load_pem_private_key(
-            pemfile.read(), None
+            pemfile.read(), None, unsafe_skip_rsa_key_validation=True
         ),
         mode="rb",
     )
@@ -287,6 +296,7 @@ class TestPKCS7Builder:
 
         sig = builder.sign(serialization.Encoding.SMIME, options)
         sig_binary = builder.sign(serialization.Encoding.DER, options)
+        assert b"text/plain" not in sig
         # We don't have a generic ASN.1 parser available to us so we instead
         # will assert on specific byte sequences being present based on the
         # parameters chosen above.
@@ -296,8 +306,17 @@ class TestPKCS7Builder:
         # as a separate section before the PKCS7 data. So we should expect to
         # have data in sig but not in sig_binary
         assert data in sig
+        # Parse the message to get the signed data, which is the
+        # first payload in the message
+        message = email.parser.BytesParser().parsebytes(sig)
+        signed_data = message.get_payload()[0].get_payload().encode()
         _pkcs7_verify(
-            serialization.Encoding.SMIME, sig, data, [cert], options, backend
+            serialization.Encoding.SMIME,
+            sig,
+            signed_data,
+            [cert],
+            options,
+            backend,
         )
         assert data not in sig_binary
         _pkcs7_verify(
@@ -321,6 +340,31 @@ class TestPKCS7Builder:
 
         sig = builder.sign(serialization.Encoding.SMIME, options)
         assert bytes(data) in sig
+        _pkcs7_verify(
+            serialization.Encoding.SMIME,
+            sig,
+            data,
+            [cert],
+            options,
+            backend,
+        )
+
+        data = bytearray(b"")
+        builder = (
+            pkcs7.PKCS7SignatureBuilder()
+            .set_data(data)
+            .add_signer(cert, key, hashes.SHA256())
+        )
+
+        sig = builder.sign(serialization.Encoding.SMIME, options)
+        _pkcs7_verify(
+            serialization.Encoding.SMIME,
+            sig,
+            data,
+            [cert],
+            options,
+            backend,
+        )
 
     def test_sign_pem(self, backend):
         data = b"hello world"
@@ -345,7 +389,6 @@ class TestPKCS7Builder:
     @pytest.mark.parametrize(
         ("hash_alg", "expected_value"),
         [
-            (hashes.SHA1(), b"\x06\x05+\x0e\x03\x02\x1a"),
             (hashes.SHA256(), b"\x06\t`\x86H\x01e\x03\x04\x02\x01"),
             (hashes.SHA384(), b"\x06\t`\x86H\x01e\x03\x04\x02\x02"),
             (hashes.SHA512(), b"\x06\t`\x86H\x01e\x03\x04\x02\x03"),
@@ -354,8 +397,6 @@ class TestPKCS7Builder:
     def test_sign_alternate_digests_der(
         self, hash_alg, expected_value, backend
     ):
-        skip_signature_hash(backend, hash_alg)
-
         data = b"hello world"
         cert, key = _load_cert_key()
         builder = (
@@ -373,7 +414,6 @@ class TestPKCS7Builder:
     @pytest.mark.parametrize(
         ("hash_alg", "expected_value"),
         [
-            (hashes.SHA1(), b"sha1"),
             (hashes.SHA256(), b"sha-256"),
             (hashes.SHA384(), b"sha-384"),
             (hashes.SHA512(), b"sha-512"),
@@ -382,8 +422,6 @@ class TestPKCS7Builder:
     def test_sign_alternate_digests_detached(
         self, hash_alg, expected_value, backend
     ):
-        skip_signature_hash(backend, hash_alg)
-
         data = b"hello world"
         cert, key = _load_cert_key()
         builder = (
@@ -496,10 +534,14 @@ class TestPKCS7Builder:
         # The text option adds text/plain headers to the S/MIME message
         # These headers are only relevant in SMIME mode, not binary, which is
         # just the PKCS7 structure itself.
-        assert b"text/plain" in sig_pem
-        # When passing the Text option the header is prepended so the actual
-        # signed data is this.
-        signed_data = b"Content-Type: text/plain\r\n\r\nhello world"
+        assert sig_pem.count(b"text/plain") == 1
+        assert b"Content-Type: text/plain\r\n\r\nhello world\r\n" in sig_pem
+        # Parse the message to get the signed data, which is the
+        # first payload in the message
+        message = email.parser.BytesParser().parsebytes(sig_pem)
+        signed_data = message.get_payload()[0].as_bytes(
+            policy=message.policy.clone(linesep="\r\n")
+        )
         _pkcs7_verify(
             serialization.Encoding.SMIME,
             sig_pem,
@@ -588,7 +630,7 @@ class TestPKCS7Builder:
         rsa_key = load_vectors_from_file(
             os.path.join("x509", "custom", "ca", "rsa_key.pem"),
             lambda pemfile: serialization.load_pem_private_key(
-                pemfile.read(), None
+                pemfile.read(), None, unsafe_skip_rsa_key_validation=True
             ),
             mode="rb",
         )
@@ -625,7 +667,7 @@ class TestPKCS7Builder:
         rsa_key = load_vectors_from_file(
             os.path.join("x509", "custom", "ca", "rsa_key.pem"),
             lambda pemfile: serialization.load_pem_private_key(
-                pemfile.read(), None
+                pemfile.read(), None, unsafe_skip_rsa_key_validation=True
             ),
             mode="rb",
         )
@@ -741,7 +783,7 @@ class TestPKCS7SerializeCerts:
             list(reversed(certs)), serialization.Encoding.DER
         )
         certs2 = pkcs7.load_der_pkcs7_certificates(p7)
-        assert certs != certs2
+        assert certs == certs2
 
     def test_pem_matches_vector(self, backend):
         p7_pem = load_vectors_from_file(
@@ -771,7 +813,7 @@ class TestPKCS7SerializeCerts:
         )
         with pytest.raises(TypeError):
             pkcs7.serialize_certificates(
-                "not a list of certs",  # type: ignore[arg-type]
+                object(),  # type: ignore[arg-type]
                 serialization.Encoding.PEM,
             )
 

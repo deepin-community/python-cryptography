@@ -5,24 +5,19 @@
 
 import itertools
 import os
-import subprocess
-import sys
-import textwrap
 
 import pytest
 
-from cryptography import utils, x509
 from cryptography.exceptions import InternalError, _Reasons
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.backends.openssl.backend import backend
 from cryptography.hazmat.backends.openssl.ec import _sn_to_elliptic_curve
 from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import dh, padding
+from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives.ciphers import Cipher
 from cryptography.hazmat.primitives.ciphers.algorithms import AES
 from cryptography.hazmat.primitives.ciphers.modes import CBC
 
-from ..primitives.fixtures_rsa import RSA_KEY_2048, RSA_KEY_512
 from ...doubles import (
     DummyAsymmetricPadding,
     DummyBlockCipherAlgorithm,
@@ -30,12 +25,15 @@ from ...doubles import (
     DummyHashAlgorithm,
     DummyMode,
 )
+from ...hazmat.primitives.test_rsa import rsa_key_512, rsa_key_2048
 from ...utils import (
-    load_nist_vectors,
     load_vectors_from_file,
     raises_unsupported_algorithm,
 )
-from ...x509.test_x509 import _load_cert
+
+# Make ruff happy since we're importing fixtures that pytest patches in as
+# func args
+__all__ = ["rsa_key_512", "rsa_key_2048"]
 
 
 def skip_if_libre_ssl(openssl_version):
@@ -136,7 +134,7 @@ class TestOpenSSL:
         assert len(errors) == 10
 
     def test_ssl_ciphers_registered(self):
-        meth = backend._lib.SSLv23_method()
+        meth = backend._lib.TLS_method()
         ctx = backend._lib.SSL_CTX_new(meth)
         assert ctx != backend._ffi.NULL
         backend._lib.SSL_CTX_free(ctx)
@@ -162,171 +160,9 @@ class TestOpenSSL:
         assert bn
         assert backend._bn_to_int(bn) == value
 
-    def test_int_to_bn_inplace(self):
-        value = (2**4242) - 4242
-        bn_ptr = backend._lib.BN_new()
-        assert bn_ptr != backend._ffi.NULL
-        bn_ptr = backend._ffi.gc(bn_ptr, backend._lib.BN_free)
-        bn = backend._int_to_bn(value, bn_ptr)
-
-        assert bn == bn_ptr
-        assert backend._bn_to_int(bn_ptr) == value
-
     def test_bn_to_int(self):
         bn = backend._int_to_bn(0)
         assert backend._bn_to_int(bn) == 0
-
-
-@pytest.mark.skipif(
-    not backend._lib.CRYPTOGRAPHY_NEEDS_OSRANDOM_ENGINE,
-    reason="Requires OpenSSL with ENGINE support and OpenSSL < 1.1.1d",
-)
-@pytest.mark.skip_fips(reason="osrandom engine disabled for FIPS")
-class TestOpenSSLRandomEngine:
-    def setup(self):
-        # The default RAND engine is global and shared between
-        # tests. We make sure that the default engine is osrandom
-        # before we start each test and restore the global state to
-        # that engine in teardown.
-        current_default = backend._lib.ENGINE_get_default_RAND()
-        name = backend._lib.ENGINE_get_name(current_default)
-        assert name == backend._lib.Cryptography_osrandom_engine_name
-
-    def teardown(self):
-        # we need to reset state to being default. backend is a shared global
-        # for all these tests.
-        backend.activate_osrandom_engine()
-        current_default = backend._lib.ENGINE_get_default_RAND()
-        name = backend._lib.ENGINE_get_name(current_default)
-        assert name == backend._lib.Cryptography_osrandom_engine_name
-
-    @pytest.mark.skipif(
-        sys.executable is None, reason="No Python interpreter available."
-    )
-    def test_osrandom_engine_is_default(self, tmpdir):
-        engine_printer = textwrap.dedent(
-            """
-            import sys
-            from cryptography.hazmat.backends.openssl.backend import backend
-
-            e = backend._lib.ENGINE_get_default_RAND()
-            name = backend._lib.ENGINE_get_name(e)
-            sys.stdout.write(backend._ffi.string(name).decode('ascii'))
-            res = backend._lib.ENGINE_free(e)
-            assert res == 1
-            """
-        )
-        engine_name = tmpdir.join("engine_name")
-
-        # If we're running tests via ``python setup.py test`` in a clean
-        # environment then all of our dependencies are going to be installed
-        # into either the current directory or the .eggs directory. However the
-        # subprocess won't know to activate these dependencies, so we'll get it
-        # to do so by passing our entire sys.path into the subprocess via the
-        # PYTHONPATH environment variable.
-        env = os.environ.copy()
-        env["PYTHONPATH"] = os.pathsep.join(sys.path)
-
-        with engine_name.open("w") as out:
-            subprocess.check_call(
-                [sys.executable, "-c", engine_printer],
-                env=env,
-                stdout=out,
-                stderr=subprocess.PIPE,
-            )
-
-        osrandom_engine_name = backend._ffi.string(
-            backend._lib.Cryptography_osrandom_engine_name
-        )
-
-        assert engine_name.read().encode("ascii") == osrandom_engine_name
-
-    def test_osrandom_sanity_check(self):
-        # This test serves as a check against catastrophic failure.
-        buf = backend._ffi.new("unsigned char[]", 500)
-        res = backend._lib.RAND_bytes(buf, 500)
-        assert res == 1
-        assert backend._ffi.buffer(buf)[:] != "\x00" * 500
-
-    def test_activate_osrandom_no_default(self):
-        backend.activate_builtin_random()
-        e = backend._lib.ENGINE_get_default_RAND()
-        assert e == backend._ffi.NULL
-        backend.activate_osrandom_engine()
-        e = backend._lib.ENGINE_get_default_RAND()
-        name = backend._lib.ENGINE_get_name(e)
-        assert name == backend._lib.Cryptography_osrandom_engine_name
-        res = backend._lib.ENGINE_free(e)
-        assert res == 1
-
-    def test_activate_builtin_random(self):
-        e = backend._lib.ENGINE_get_default_RAND()
-        assert e != backend._ffi.NULL
-        name = backend._lib.ENGINE_get_name(e)
-        assert name == backend._lib.Cryptography_osrandom_engine_name
-        res = backend._lib.ENGINE_free(e)
-        assert res == 1
-        backend.activate_builtin_random()
-        e = backend._lib.ENGINE_get_default_RAND()
-        assert e == backend._ffi.NULL
-
-    def test_activate_builtin_random_already_active(self):
-        backend.activate_builtin_random()
-        e = backend._lib.ENGINE_get_default_RAND()
-        assert e == backend._ffi.NULL
-        backend.activate_builtin_random()
-        e = backend._lib.ENGINE_get_default_RAND()
-        assert e == backend._ffi.NULL
-
-    def test_osrandom_engine_implementation(self):
-        name = backend.osrandom_engine_implementation()
-        assert name in [
-            "/dev/urandom",
-            "CryptGenRandom",
-            "getentropy",
-            "getrandom",
-        ]
-        if sys.platform.startswith("linux"):
-            assert name in ["getrandom", "/dev/urandom"]
-        if sys.platform == "darwin":
-            assert name in ["getentropy", "/dev/urandom"]
-        if sys.platform == "win32":
-            assert name == "CryptGenRandom"
-
-    def test_activate_osrandom_already_default(self):
-        e = backend._lib.ENGINE_get_default_RAND()
-        name = backend._lib.ENGINE_get_name(e)
-        assert name == backend._lib.Cryptography_osrandom_engine_name
-        res = backend._lib.ENGINE_free(e)
-        assert res == 1
-        backend.activate_osrandom_engine()
-        e = backend._lib.ENGINE_get_default_RAND()
-        name = backend._lib.ENGINE_get_name(e)
-        assert name == backend._lib.Cryptography_osrandom_engine_name
-        res = backend._lib.ENGINE_free(e)
-        assert res == 1
-
-
-@pytest.mark.skipif(
-    backend._lib.CRYPTOGRAPHY_NEEDS_OSRANDOM_ENGINE,
-    reason="Requires OpenSSL without ENGINE support or OpenSSL >=1.1.1d",
-)
-class TestOpenSSLNoEngine:
-    def test_no_engine_support(self):
-        assert (
-            backend._ffi.string(backend._lib.Cryptography_osrandom_engine_id)
-            == b"no-engine-support"
-        )
-        assert (
-            backend._ffi.string(backend._lib.Cryptography_osrandom_engine_name)
-            == b"osrandom_engine disabled"
-        )
-
-    def test_activate_builtin_random_does_nothing(self):
-        backend.activate_builtin_random()
-
-    def test_activate_osrandom_does_nothing(self):
-        backend.activate_osrandom_engine()
 
 
 class TestOpenSSLRSA:
@@ -382,8 +218,8 @@ class TestOpenSSLRSA:
         assert (
             backend.rsa_padding_supported(
                 padding.OAEP(
-                    mgf=padding.MGF1(algorithm=hashes.SHA1()),
-                    algorithm=hashes.SHA1(),
+                    mgf=padding.MGF1(algorithm=hashes.SHA256()),
+                    algorithm=hashes.SHA256(),
                     label=None,
                 ),
             )
@@ -399,6 +235,12 @@ class TestOpenSSLRSA:
             hashes.SHA512(),
         ]
         for mgf1alg, oaepalg in itertools.product(hashalgs, hashalgs):
+            if backend._fips_enabled and (
+                isinstance(mgf1alg, hashes.SHA1)
+                or isinstance(oaepalg, hashes.SHA1)
+            ):
+                continue
+
             assert (
                 backend.rsa_padding_supported(
                     padding.OAEP(
@@ -429,10 +271,9 @@ class TestOpenSSLRSA:
             is False
         )
 
-    def test_unsupported_mgf1_hash_algorithm_md5_decrypt(self):
-        private_key = RSA_KEY_512.private_key(backend)
+    def test_unsupported_mgf1_hash_algorithm_md5_decrypt(self, rsa_key_512):
         with raises_unsupported_algorithm(_Reasons.UNSUPPORTED_PADDING):
-            private_key.decrypt(
+            rsa_key_512.decrypt(
                 b"0" * 64,
                 padding.OAEP(
                     mgf=padding.MGF1(algorithm=hashes.MD5()),
@@ -479,7 +320,9 @@ class TestOpenSSLSerializationWithOpenSSL:
     def test_unsupported_evp_pkey_type(self):
         key = backend._create_evp_pkey_gc()
         with raises_unsupported_algorithm(None):
-            backend._evp_pkey_to_private_key(key)
+            backend._evp_pkey_to_private_key(
+                key, unsafe_skip_rsa_key_validation=False
+            )
         with raises_unsupported_algorithm(None):
             backend._evp_pkey_to_public_key(key)
 
@@ -495,7 +338,9 @@ class TestOpenSSLSerializationWithOpenSSL:
                 ),
                 lambda pemfile: (
                     backend.load_pem_private_key(
-                        pemfile.read().encode(), password
+                        pemfile.read().encode(),
+                        password,
+                        unsafe_skip_rsa_key_validation=False,
                     )
                 ),
             )
@@ -508,11 +353,10 @@ class TestOpenSSLEllipticCurve:
 
 
 class TestRSAPEMSerialization:
-    def test_password_length_limit(self):
+    def test_password_length_limit(self, rsa_key_2048):
         password = b"x" * 1024
-        key = RSA_KEY_2048.private_key(backend)
         with pytest.raises(ValueError):
-            key.private_bytes(
+            rsa_key_2048.private_bytes(
                 serialization.Encoding.PEM,
                 serialization.PrivateFormat.PKCS8,
                 serialization.BestAvailableEncryption(password),
@@ -528,36 +372,6 @@ class TestRSAPEMSerialization:
     skip_message="Requires DH support",
 )
 class TestOpenSSLDHSerialization:
-    @pytest.mark.parametrize(
-        "vector",
-        load_vectors_from_file(
-            os.path.join("asymmetric", "DH", "RFC5114.txt"), load_nist_vectors
-        ),
-    )
-    def test_dh_serialization_with_q_unsupported(self, backend, vector):
-        parameters = dh.DHParameterNumbers(
-            int(vector["p"], 16), int(vector["g"], 16), int(vector["q"], 16)
-        )
-        public = dh.DHPublicNumbers(int(vector["ystatcavs"], 16), parameters)
-        private = dh.DHPrivateNumbers(int(vector["xstatcavs"], 16), public)
-        private_key = private.private_key(backend)
-        public_key = private_key.public_key()
-        with raises_unsupported_algorithm(_Reasons.UNSUPPORTED_SERIALIZATION):
-            private_key.private_bytes(
-                serialization.Encoding.PEM,
-                serialization.PrivateFormat.PKCS8,
-                serialization.NoEncryption(),
-            )
-        with raises_unsupported_algorithm(_Reasons.UNSUPPORTED_SERIALIZATION):
-            public_key.public_bytes(
-                serialization.Encoding.PEM,
-                serialization.PublicFormat.SubjectPublicKeyInfo,
-            )
-        with raises_unsupported_algorithm(_Reasons.UNSUPPORTED_SERIALIZATION):
-            parameters.parameters(backend).parameter_bytes(
-                serialization.Encoding.PEM, serialization.ParameterFormat.PKCS3
-            )
-
     @pytest.mark.parametrize(
         ("key_path", "loader_func"),
         [
@@ -599,55 +413,3 @@ class TestOpenSSLDHSerialization:
         )
         with pytest.raises(ValueError):
             loader_func(key_bytes, backend)
-
-
-def test_pyopenssl_cert_fallback():
-    cert = _load_cert(
-        os.path.join("x509", "cryptography.io.pem"),
-        x509.load_pem_x509_certificate,
-    )
-    x509_ossl = None
-    with pytest.warns(utils.CryptographyDeprecationWarning):
-        x509_ossl = cert._x509  # type:ignore[attr-defined]
-    assert x509_ossl is not None
-
-    from cryptography.hazmat.backends.openssl.x509 import _Certificate
-
-    with pytest.warns(utils.CryptographyDeprecationWarning):
-        _Certificate(backend, x509_ossl)
-
-
-def test_pyopenssl_csr_fallback():
-    cert = _load_cert(
-        os.path.join("x509", "requests", "rsa_sha256.pem"),
-        x509.load_pem_x509_csr,
-    )
-    req_ossl = None
-    with pytest.warns(utils.CryptographyDeprecationWarning):
-        req_ossl = cert._x509_req  # type:ignore[attr-defined]
-    assert req_ossl is not None
-
-    from cryptography.hazmat.backends.openssl.x509 import (
-        _CertificateSigningRequest,
-    )
-
-    with pytest.warns(utils.CryptographyDeprecationWarning):
-        _CertificateSigningRequest(backend, req_ossl)
-
-
-def test_pyopenssl_crl_fallback():
-    cert = _load_cert(
-        os.path.join("x509", "PKITS_data", "crls", "GoodCACRL.crl"),
-        x509.load_der_x509_crl,
-    )
-    req_crl = None
-    with pytest.warns(utils.CryptographyDeprecationWarning):
-        req_crl = cert._x509_crl  # type:ignore[attr-defined]
-    assert req_crl is not None
-
-    from cryptography.hazmat.backends.openssl.x509 import (
-        _CertificateRevocationList,
-    )
-
-    with pytest.warns(utils.CryptographyDeprecationWarning):
-        _CertificateRevocationList(backend, req_crl)

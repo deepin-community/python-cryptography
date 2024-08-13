@@ -62,7 +62,7 @@ PBKDF2
         ...     algorithm=hashes.SHA256(),
         ...     length=32,
         ...     salt=salt,
-        ...     iterations=390000,
+        ...     iterations=480000,
         ... )
         >>> key = kdf.derive(b"my great password")
         >>> # verify
@@ -70,7 +70,7 @@ PBKDF2
         ...     algorithm=hashes.SHA256(),
         ...     length=32,
         ...     salt=salt,
-        ...     iterations=390000,
+        ...     iterations=480000,
         ... )
         >>> kdf.verify(b"my great password", key)
 
@@ -460,7 +460,8 @@ HKDF
         to be secret, but may cause stronger security guarantees if secret; see
         :rfc:`5869` and the `HKDF paper`_ for more details. If ``None`` is
         explicitly passed a default salt of ``algorithm.digest_size // 8`` null
-        bytes will be used.
+        bytes will be used. See `understanding HKDF`_ for additional detail about
+        the salt and info parameters.
 
     :param bytes info: Application specific context information.  If ``None``
         is explicitly passed an empty byte string will be used.
@@ -723,7 +724,7 @@ KBKDF
 .. class:: KBKDFCMAC(algorithm, mode, length, rlen, llen, location,\
            label, context, fixed)
 
-    .. versionadded:: 35.0
+    .. versionadded:: 35.0.0
 
     KBKDF (Key Based Key Derivation Function) is defined by the
     `NIST SP 800-108`_ document, to be used to derive additional
@@ -879,7 +880,7 @@ KBKDF
 
     .. attribute:: MiddleFixed
 
-        .. versionadded:: 38.0
+        .. versionadded:: 38.0.0
 
         The counter iteration variable will be concatenated in the middle
         of the fixed input data.
@@ -1037,3 +1038,4 @@ Interface
 .. _`here`: https://stackoverflow.com/a/30308723/1170681
 .. _`recommends`: https://tools.ietf.org/html/rfc7914#section-2
 .. _`The scrypt paper`: https://www.tarsnap.com/scrypt/scrypt.pdf
+.. _`understanding HKDF`: https://soatok.blog/2021/11/17/understanding-hkdf/

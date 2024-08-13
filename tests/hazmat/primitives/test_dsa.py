@@ -9,6 +9,7 @@ import typing
 
 import pytest
 
+from cryptography import utils
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import dsa
@@ -17,14 +18,14 @@ from cryptography.hazmat.primitives.asymmetric.utils import (
     encode_dss_signature,
 )
 
-from .fixtures_dsa import DSA_KEY_1024, DSA_KEY_2048, DSA_KEY_3072
-from .utils import skip_fips_traditional_openssl
 from ...doubles import DummyHashAlgorithm, DummyKeySerializationEncryption
 from ...utils import (
     load_fips_dsa_key_pair_vectors,
     load_fips_dsa_sig_vectors,
     load_vectors_from_file,
 )
+from .fixtures_dsa import DSA_KEY_1024, DSA_KEY_2048, DSA_KEY_3072
+from .utils import skip_fips_traditional_openssl
 
 _ALGORITHMS_DICT: typing.Dict[str, hashes.HashAlgorithm] = {
     "SHA1": hashes.SHA1(),
@@ -383,6 +384,20 @@ class TestDSA:
             x=pn.x,
         ).private_key(backend)
 
+    def test_public_key_equality(self, backend):
+        key_bytes = load_vectors_from_file(
+            os.path.join("asymmetric", "PKCS8", "unenc-dsa-pkcs8.pem"),
+            lambda pemfile: pemfile.read().encode(),
+        )
+        key1 = serialization.load_pem_private_key(key_bytes, None).public_key()
+        key2 = serialization.load_pem_private_key(key_bytes, None).public_key()
+        key3 = DSA_KEY_2048.private_key().public_key()
+        assert key1 == key2
+        assert key1 != key3
+        assert key1 != object()
+        with pytest.raises(TypeError):
+            key1 < key2  # type: ignore[operator]
+
 
 @pytest.mark.supported(
     only_if=lambda backend: backend.dsa_supported(),
@@ -698,6 +713,10 @@ class TestDSASerialization:
             (serialization.Encoding.DER, serialization.PrivateFormat.Raw),
             (serialization.Encoding.Raw, serialization.PrivateFormat.Raw),
             (serialization.Encoding.X962, serialization.PrivateFormat.PKCS8),
+            (
+                serialization.Encoding.SMIME,
+                serialization.PrivateFormat.TraditionalOpenSSL,
+            ),
         ],
     )
     def test_private_bytes_rejects_invalid(self, encoding, fmt, backend):
@@ -920,9 +939,11 @@ class TestDSAPEMPublicKeySerialization:
         )
         key = serialization.load_pem_public_key(key_bytes, backend)
 
-        ssh_bytes = key.public_bytes(
-            serialization.Encoding.OpenSSH, serialization.PublicFormat.OpenSSH
-        )
+        with pytest.warns(utils.DeprecatedIn40):
+            ssh_bytes = key.public_bytes(
+                serialization.Encoding.OpenSSH,
+                serialization.PublicFormat.OpenSSH,
+            )
         assert ssh_bytes == (
             b"ssh-dss AAAAB3NzaC1kc3MAAACBAKoJMMwUWCUiHK/6KKwolBlqJ4M95ewhJweR"
             b"aJQgd3Si57I4sNNvGySZosJYUIPrAUMpJEGNhn+qIS3RBx1NzrJ4J5StOTzAik1K"

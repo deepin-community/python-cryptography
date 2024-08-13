@@ -304,7 +304,7 @@ Padding
 
     .. attribute:: DIGEST_LENGTH
 
-        .. versionadded:: 37.0
+        .. versionadded:: 37.0.0
 
         Pass this attribute to ``salt_length`` to set the salt length to the
         byte length of the digest passed when calling ``sign``. Note that this
@@ -312,7 +312,7 @@ Padding
 
     .. attribute:: AUTO
 
-        .. versionadded:: 37.0
+        .. versionadded:: 37.0.0
 
         Pass this attribute to ``salt_length`` to automatically determine the
         salt length when verifying. Raises ``ValueError`` if used when signing.
@@ -473,7 +473,21 @@ is unavailable.
         A `Chinese remainder theorem`_ coefficient used to speed up RSA
         operations. Calculated as: q\ :sup:`-1` mod p
 
-    .. method:: private_key()
+    .. method:: private_key(*, unsafe_skip_rsa_key_validation=False)
+
+        :param unsafe_skip_rsa_key_validation:
+
+            .. versionadded:: 39.0.0
+
+            A keyword-only argument that defaults to ``False``. If ``True``
+            RSA private keys will not be validated. This significantly speeds up
+            loading the keys, but is :term:`unsafe` unless you are certain
+            the key is valid. User supplied keys should never be loaded with
+            this parameter set to ``True``. If you do load an invalid key this
+            way and attempt to use it OpenSSL may hang, crash, or otherwise
+            misbehave.
+
+        :type unsafe_skip_rsa_key_validation: bool
 
         :returns: An instance of
             :class:`~cryptography.hazmat.primitives.asymmetric.rsa.RSAPrivateKey`.
@@ -540,6 +554,11 @@ Key interfaces
     .. method:: decrypt(ciphertext, padding)
 
         .. versionadded:: 0.4
+
+        .. warning::
+
+            Our implementation of PKCS1 v1.5 decryption is not constant time. See
+            :doc:`/limitations` for details.
 
         Decrypt data that was encrypted with the public key.
 
@@ -623,13 +642,6 @@ Key interfaces
         :return bytes: Serialized key.
 
 
-.. class:: RSAPrivateKeyWithSerialization
-
-    .. versionadded:: 0.8
-
-    Alias for :class:`RSAPrivateKey`.
-
-
 .. class:: RSAPublicKey
 
     .. versionadded:: 0.2
@@ -710,6 +722,7 @@ Key interfaces
             :class:`~cryptography.hazmat.primitives.asymmetric.utils.Prehashed`
             if the ``data`` you want to verify has already been hashed.
 
+        :returns: None
         :raises cryptography.exceptions.InvalidSignature: If the signature does
             not validate.
 
@@ -762,13 +775,6 @@ Key interfaces
 
         :raises cryptography.exceptions.UnsupportedAlgorithm: If signature
             data recovery is not supported with the provided ``padding`` type.
-
-.. class:: RSAPublicKeyWithSerialization
-
-    .. versionadded:: 0.8
-
-    Alias for :class:`RSAPublicKey`.
-
 
 .. _`RSA`: https://en.wikipedia.org/wiki/RSA_(cryptosystem)
 .. _`public-key`: https://en.wikipedia.org/wiki/Public-key_cryptography

@@ -2,6 +2,7 @@
 # 2.0, and the BSD License. See the LICENSE file in the root of this repository
 # for complete details.
 
+from __future__ import annotations
 
 INCLUDES = """
 #include <openssl/rsa.h>
@@ -11,11 +12,12 @@ TYPES = """
 typedef ... RSA;
 typedef ... BN_GENCB;
 static const int RSA_PKCS1_PADDING;
-static const int RSA_NO_PADDING;
 static const int RSA_PKCS1_OAEP_PADDING;
 static const int RSA_PKCS1_PSS_PADDING;
 static const int RSA_F4;
 static const int RSA_PSS_SALTLEN_AUTO;
+
+static const int Cryptography_HAS_IMPLICIT_RSA_REJECTION;
 """
 
 FUNCTIONS = """
@@ -27,7 +29,6 @@ RSA *RSAPublicKey_dup(RSA *);
 int RSA_blinding_on(RSA *, BN_CTX *);
 int RSA_print(BIO *, const RSA *, int);
 
-/* added in 1.1.0 when the RSA struct was opaqued */
 int RSA_set0_key(RSA *, BIGNUM *, BIGNUM *, BIGNUM *);
 int RSA_set0_factors(RSA *, BIGNUM *, BIGNUM *);
 int RSA_set0_crt_params(RSA *, BIGNUM *, BIGNUM *, BIGNUM *);
@@ -49,5 +50,11 @@ CUSTOMIZATIONS = """
 // automatic salt length computation as in OpenSSL and LibreSSL
 #if !defined(RSA_PSS_SALTLEN_AUTO)
 #define RSA_PSS_SALTLEN_AUTO -2
+#endif
+
+#if defined(EVP_PKEY_CTRL_RSA_IMPLICIT_REJECTION)
+static const int Cryptography_HAS_IMPLICIT_RSA_REJECTION = 1;
+#else
+static const int Cryptography_HAS_IMPLICIT_RSA_REJECTION = 0;
 #endif
 """

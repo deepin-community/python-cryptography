@@ -2,6 +2,7 @@
 # 2.0, and the BSD License. See the LICENSE file in the root of this repository
 # for complete details.
 
+from __future__ import annotations
 
 INCLUDES = """
 #include <openssl/obj_mac.h>
@@ -15,8 +16,6 @@ static const int Cryptography_HAS_POLY1305;
 static const int NID_undef;
 static const int NID_aes_256_cbc;
 static const int NID_pbe_WithSHA1And3_Key_TripleDES_CBC;
-static const int NID_X25519;
-static const int NID_X448;
 static const int NID_ED25519;
 static const int NID_ED448;
 static const int NID_poly1305;

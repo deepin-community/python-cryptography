@@ -5,6 +5,7 @@
 
 import json
 import os
+import platform
 import subprocess
 import sys
 import textwrap
@@ -12,7 +13,6 @@ import textwrap
 import pytest
 
 from cryptography.hazmat.bindings.openssl.binding import Binding
-
 
 MEMORY_LEAK_SCRIPT = """
 import sys
@@ -24,9 +24,11 @@ def main(argv):
 
     import cffi
 
-    from cryptography.hazmat.bindings._openssl import ffi, lib
+    from cryptography.hazmat.bindings._rust import _openssl
 
     heap = {}
+    start_heap = {}
+    start_heap_realloc_delta = [0]  # 1-item list so callbacks can mutate it
 
     BACKTRACE_ENABLED = False
     if BACKTRACE_ENABLED:
@@ -49,7 +51,9 @@ def main(argv):
                 backtrace_ffi.string(symbols[i]).decode()
                 for i in range(length)
             ]
-            lib.Cryptography_free_wrapper(symbols, backtrace_ffi.NULL, 0)
+            _openssl.lib.Cryptography_free_wrapper(
+                symbols, backtrace_ffi.NULL, 0
+            )
             return stack
     else:
         def backtrace():
@@ -58,27 +62,45 @@ def main(argv):
         def symbolize_backtrace(trace):
             return None
 
-    @ffi.callback("void *(size_t, const char *, int)")
+    @_openssl.ffi.callback("void *(size_t, const char *, int)")
     def malloc(size, path, line):
-        ptr = lib.Cryptography_malloc_wrapper(size, path, line)
+        ptr = _openssl.lib.Cryptography_malloc_wrapper(size, path, line)
         heap[ptr] = (size, path, line, backtrace())
         return ptr
 
-    @ffi.callback("void *(void *, size_t, const char *, int)")
+    @_openssl.ffi.callback("void *(void *, size_t, const char *, int)")
     def realloc(ptr, size, path, line):
-        if ptr != ffi.NULL:
+        if ptr != _openssl.ffi.NULL:
             del heap[ptr]
-        new_ptr = lib.Cryptography_realloc_wrapper(ptr, size, path, line)
+        new_ptr = _openssl.lib.Cryptography_realloc_wrapper(
+            ptr, size, path, line
+        )
         heap[new_ptr] = (size, path, line, backtrace())
+
+        # It is possible that something during the test will cause a
+        # realloc of memory allocated during the startup phase. (This
+        # was observed in conda-forge Windows builds of this package with
+        # provider operation_bits pointers in crypto/provider_core.c.) If
+        # we don't pay attention to that, the realloc'ed pointer will show
+        # up as a leak; but we also don't want to allow this kind of realloc
+        # to consume large amounts of additional memory. So we track the
+        # realloc and the change in memory consumption.
+        startup_info = start_heap.pop(ptr, None)
+        if startup_info is not None:
+            start_heap[new_ptr] = heap[new_ptr]
+            start_heap_realloc_delta[0] += size - startup_info[0]
+
         return new_ptr
 
-    @ffi.callback("void(void *, const char *, int)")
+    @_openssl.ffi.callback("void(void *, const char *, int)")
     def free(ptr, path, line):
-        if ptr != ffi.NULL:
+        if ptr != _openssl.ffi.NULL:
             del heap[ptr]
-            lib.Cryptography_free_wrapper(ptr, path, line)
+            _openssl.lib.Cryptography_free_wrapper(ptr, path, line)
 
-    result = lib.Cryptography_CRYPTO_set_mem_functions(malloc, realloc, free)
+    result = _openssl.lib.Cryptography_CRYPTO_set_mem_functions(
+        malloc, realloc, free
+    )
     assert result == 1
 
     # Trigger a bunch of initialization stuff.
@@ -87,7 +109,7 @@ def main(argv):
 
     hashlib.sha256()
 
-    start_heap = set(heap)
+    start_heap.update(heap)
 
     try:
         func(*argv[1:])
@@ -96,35 +118,42 @@ def main(argv):
         gc.collect()
         gc.collect()
 
-        if lib.CRYPTOGRAPHY_OPENSSL_300_OR_GREATER:
-            lib.OSSL_PROVIDER_unload(backend._binding._legacy_provider)
-            lib.OSSL_PROVIDER_unload(backend._binding._default_provider)
+        if _openssl.lib.CRYPTOGRAPHY_OPENSSL_300_OR_GREATER:
+            _openssl.lib.OSSL_PROVIDER_unload(backend._binding._legacy_provider)
+            _openssl.lib.OSSL_PROVIDER_unload(backend._binding._default_provider)
 
-        if lib.Cryptography_HAS_OPENSSL_CLEANUP:
-            lib.OPENSSL_cleanup()
+        _openssl.lib.OPENSSL_cleanup()
 
         # Swap back to the original functions so that if OpenSSL tries to free
         # something from its atexit handle it won't be going through a Python
         # function, which will be deallocated when this function returns
-        result = lib.Cryptography_CRYPTO_set_mem_functions(
-            ffi.addressof(lib, "Cryptography_malloc_wrapper"),
-            ffi.addressof(lib, "Cryptography_realloc_wrapper"),
-            ffi.addressof(lib, "Cryptography_free_wrapper"),
+        result = _openssl.lib.Cryptography_CRYPTO_set_mem_functions(
+            _openssl.ffi.addressof(
+                _openssl.lib, "Cryptography_malloc_wrapper"
+            ),
+            _openssl.ffi.addressof(
+                _openssl.lib, "Cryptography_realloc_wrapper"
+            ),
+            _openssl.ffi.addressof(_openssl.lib, "Cryptography_free_wrapper"),
         )
         assert result == 1
 
-    remaining = set(heap) - start_heap
+    remaining = set(heap) - set(start_heap)
 
-    if remaining:
-        sys.stdout.write(json.dumps(dict(
-            (int(ffi.cast("size_t", ptr)), {
+    # The constant here is the number of additional bytes of memory
+    # consumption that are allowed in reallocs of start_heap memory.
+    if remaining or start_heap_realloc_delta[0] > 3072:
+        info = dict(
+            (int(_openssl.ffi.cast("size_t", ptr)), {
                 "size": heap[ptr][0],
-                "path": ffi.string(heap[ptr][1]).decode(),
+                "path": _openssl.ffi.string(heap[ptr][1]).decode(),
                 "line": heap[ptr][2],
                 "backtrace": symbolize_backtrace(heap[ptr][3]),
             })
             for ptr in remaining
-        )))
+        )
+        info["start_heap_realloc_delta"] = start_heap_realloc_delta[0]
+        sys.stdout.write(json.dumps(info))
         sys.stdout.flush()
         sys.exit(255)
 
@@ -146,7 +175,7 @@ def assert_no_memory_leaks(s, argv=[]):
     argv = [
         sys.executable,
         "-c",
-        "{}\n\n{}".format(s, MEMORY_LEAK_SCRIPT),
+        f"{s}\n\n{MEMORY_LEAK_SCRIPT}",
     ] + argv
     # Shell out to a fresh Python process because OpenSSL does not allow you to
     # install new memory hooks after the first malloc/free occurs.
@@ -175,8 +204,9 @@ def assert_no_memory_leaks(s, argv=[]):
 
 def skip_if_memtesting_not_supported():
     return pytest.mark.skipif(
-        not Binding().lib.Cryptography_HAS_MEM_FUNCTIONS,
-        reason="Requires OpenSSL memory functions (>=1.1.0)",
+        not Binding().lib.Cryptography_HAS_MEM_FUNCTIONS
+        or platform.python_implementation() == "PyPy",
+        reason="Requires OpenSSL memory functions (>=1.1.0) and not PyPy",
     )
 
 
@@ -249,76 +279,6 @@ class TestAssertNoMemoryLeaks:
 @pytest.mark.skip_fips(reason="FIPS self-test sets allow_customize = 0")
 @skip_if_memtesting_not_supported()
 class TestOpenSSLMemoryLeaks:
-    @pytest.mark.parametrize(
-        "path", ["x509/PKITS_data/certs/ValidcRLIssuerTest28EE.crt"]
-    )
-    def test_der_x509_certificate_extensions(self, path):
-        assert_no_memory_leaks(
-            textwrap.dedent(
-                """
-        def func(path):
-            from cryptography import x509
-            from cryptography.hazmat.backends.openssl import backend
-
-            import cryptography_vectors
-
-            with cryptography_vectors.open_vector_file(path, "rb") as f:
-                cert = x509.load_der_x509_certificate(
-                    f.read(), backend
-                )
-
-            cert.extensions
-        """
-            ),
-            [path],
-        )
-
-    @pytest.mark.parametrize("path", ["x509/cryptography.io.pem"])
-    def test_pem_x509_certificate_extensions(self, path):
-        assert_no_memory_leaks(
-            textwrap.dedent(
-                """
-        def func(path):
-            from cryptography import x509
-            from cryptography.hazmat.backends.openssl import backend
-
-            import cryptography_vectors
-
-            with cryptography_vectors.open_vector_file(path, "rb") as f:
-                cert = x509.load_pem_x509_certificate(
-                    f.read(), backend
-                )
-
-            cert.extensions
-        """
-            ),
-            [path],
-        )
-
-    def test_x509_csr_extensions(self):
-        assert_no_memory_leaks(
-            textwrap.dedent(
-                """
-        def func():
-            from cryptography import x509
-            from cryptography.hazmat.backends.openssl import backend
-            from cryptography.hazmat.primitives import hashes
-            from cryptography.hazmat.primitives.asymmetric import rsa
-
-            private_key = rsa.generate_private_key(
-                key_size=2048, public_exponent=65537, backend=backend
-            )
-            cert = x509.CertificateSigningRequestBuilder().subject_name(
-                x509.Name([])
-            ).add_extension(
-               x509.OCSPNoCheck(), critical=False
-            ).sign(private_key, hashes.SHA256(), backend)
-
-            cert.extensions
-        """
-            )
-        )
-
     def test_ec_private_numbers_private_key(self):
         assert_no_memory_leaks(
             textwrap.dedent(
@@ -372,31 +332,6 @@ class TestOpenSSLMemoryLeaks:
             )
         )
 
-    def test_create_ocsp_request(self):
-        assert_no_memory_leaks(
-            textwrap.dedent(
-                """
-        def func():
-            from cryptography import x509
-            from cryptography.hazmat.backends.openssl import backend
-            from cryptography.hazmat.primitives import hashes
-            from cryptography.x509 import ocsp
-            import cryptography_vectors
-
-            path = "x509/PKITS_data/certs/ValidcRLIssuerTest28EE.crt"
-            with cryptography_vectors.open_vector_file(path, "rb") as f:
-                cert = x509.load_der_x509_certificate(
-                    f.read(), backend
-                )
-            builder = ocsp.OCSPRequestBuilder()
-            builder = builder.add_certificate(
-                cert, cert, hashes.SHA1()
-            ).add_extension(x509.OCSPNonce(b"0000"), False)
-            req = builder.build()
-        """
-            )
-        )
-
     @pytest.mark.parametrize(
         "path",
         ["pkcs12/cert-aes256cbc-no-key.p12", "pkcs12/cert-key-aes256cbc.p12"],
@@ -418,119 +353,6 @@ class TestOpenSSLMemoryLeaks:
         """
             ),
             [path],
-        )
-
-    def test_create_crl_with_idp(self):
-        assert_no_memory_leaks(
-            textwrap.dedent(
-                """
-        def func():
-            import datetime
-            from cryptography import x509
-            from cryptography.hazmat.backends.openssl import backend
-            from cryptography.hazmat.primitives import hashes
-            from cryptography.hazmat.primitives.asymmetric import ec
-            from cryptography.x509.oid import NameOID
-
-            key = ec.generate_private_key(ec.SECP256R1(), backend)
-            last_update = datetime.datetime(2002, 1, 1, 12, 1)
-            next_update = datetime.datetime(2030, 1, 1, 12, 1)
-            idp = x509.IssuingDistributionPoint(
-                full_name=None,
-                relative_name=x509.RelativeDistinguishedName([
-                    x509.NameAttribute(
-                        oid=x509.NameOID.ORGANIZATION_NAME, value=u"PyCA")
-                ]),
-                only_contains_user_certs=False,
-                only_contains_ca_certs=True,
-                only_some_reasons=None,
-                indirect_crl=False,
-                only_contains_attribute_certs=False,
-            )
-            builder = x509.CertificateRevocationListBuilder().issuer_name(
-                x509.Name([
-                    x509.NameAttribute(
-                        NameOID.COMMON_NAME, u"cryptography.io CA"
-                    )
-                ])
-            ).last_update(
-                last_update
-            ).next_update(
-                next_update
-            ).add_extension(
-                idp, True
-            )
-
-            crl = builder.sign(key, hashes.SHA256(), backend)
-            crl.extensions.get_extension_for_class(
-                x509.IssuingDistributionPoint
-            )
-        """
-            )
-        )
-
-    def test_create_certificate_with_extensions(self):
-        assert_no_memory_leaks(
-            textwrap.dedent(
-                """
-        def func():
-            import datetime
-
-            from cryptography import x509
-            from cryptography.hazmat.backends.openssl import backend
-            from cryptography.hazmat.primitives import hashes
-            from cryptography.hazmat.primitives.asymmetric import ec
-            from cryptography.x509.oid import (
-                AuthorityInformationAccessOID, ExtendedKeyUsageOID, NameOID
-            )
-
-            private_key = ec.generate_private_key(ec.SECP256R1(), backend)
-
-            not_valid_before = datetime.datetime.now()
-            not_valid_after = not_valid_before + datetime.timedelta(days=365)
-
-            aia = x509.AuthorityInformationAccess([
-                x509.AccessDescription(
-                    AuthorityInformationAccessOID.OCSP,
-                    x509.UniformResourceIdentifier(u"http://ocsp.domain.com")
-                ),
-                x509.AccessDescription(
-                    AuthorityInformationAccessOID.CA_ISSUERS,
-                    x509.UniformResourceIdentifier(u"http://domain.com/ca.crt")
-                )
-            ])
-            sans = [u'*.example.org', u'foobar.example.net']
-            san = x509.SubjectAlternativeName(list(map(x509.DNSName, sans)))
-
-            ski = x509.SubjectKeyIdentifier.from_public_key(
-                private_key.public_key()
-            )
-            eku = x509.ExtendedKeyUsage([
-                ExtendedKeyUsageOID.CLIENT_AUTH,
-                ExtendedKeyUsageOID.SERVER_AUTH,
-                ExtendedKeyUsageOID.CODE_SIGNING,
-            ])
-
-            builder = x509.CertificateBuilder().serial_number(
-                777
-            ).issuer_name(x509.Name([
-                x509.NameAttribute(NameOID.COUNTRY_NAME, u'US'),
-            ])).subject_name(x509.Name([
-                x509.NameAttribute(NameOID.COUNTRY_NAME, u'US'),
-            ])).public_key(
-                private_key.public_key()
-            ).add_extension(
-                aia, critical=False
-            ).not_valid_before(
-                not_valid_before
-            ).not_valid_after(
-                not_valid_after
-            )
-
-            cert = builder.sign(private_key, hashes.SHA256(), backend)
-            cert.extensions
-        """
-            )
         )
 
     def test_write_pkcs12_key_and_certificates(self):

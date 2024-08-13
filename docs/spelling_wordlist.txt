@@ -38,6 +38,7 @@ decrypted
 decrypting
 deprecations
 DER
+dereference
 deserialize
 deserialized
 Deserialization
@@ -60,6 +61,8 @@ Google
 hazmat
 Homebrew
 hostname
+hostnames
+implementor
 incrementing
 indistinguishability
 initialisms
@@ -75,6 +78,7 @@ Koblitz
 Lange
 logins
 metadata
+MGF
 Monterey
 Mozilla
 multi
@@ -91,11 +95,13 @@ personalization
 RHEL
 parsers
 Parsers
+PEM
 pickleable
 plaintext
 Poly
 pre
 precompute
+precomputed
 preprocessor
 preprocessors
 presentational
@@ -125,6 +131,7 @@ unencrypted
 unicode
 unpadded
 unpadding
+Ventura
 verifier
 Verifier
 Verisign
