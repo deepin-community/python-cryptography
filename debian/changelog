@@ -1,3 +1,23 @@
+python-cryptography (43.0.0-3+deb13u1) trixie; urgency=medium
+
+  * Non-maintainer upload.
+  * CVE-2026-26007: Missing validation in EC public key creation.
+    (Closes: #1127926)
+
+ -- Arnaud Rebillout <arnaudr@debian.org>  Wed, 04 Mar 2026 14:17:04 +0700
+
+python-cryptography (43.0.0-3) unstable; urgency=medium
+
+  [ Peter Michael Green ]
+  * Fix overly strict build-dependency for cc crate (Closes: #1104046).
+
+  [ Andrey Rakhmatullin ]
+  * Bump Standards-Version to 4.7.2.
+  * Remove Rules-Requires-Root.
+  * Remove no longer needed Python 3 mentions from the package description.
+
+ -- Andrey Rakhmatullin <wrar@debian.org>  Fri, 25 Apr 2025 11:17:42 +0500
+
 python-cryptography (43.0.0-2) unstable; urgency=medium
 
   * Restore B-D: python3-setuptools (Closes: #1100262).

@@ -3,3 +3,4 @@ drop-cffi-dep.patch
 downgrade-deps.patch
 0004-update-to-asn1-0.19-and-use-X509GeneralizedTime.patch
 0005-Support-128-bit-OID-arcs-11820.patch
+0006-CVE-2026-26007.patch

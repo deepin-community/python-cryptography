@@ -8,7 +8,7 @@ Build-Depends: cargo,
                debhelper-compat (= 13),
                dh-sequence-python3,
                librust-asn1-0.20-dev,
-               librust-cc-1.1-dev,
+               librust-cc-1-dev (>= 1.1.6~),
                librust-cfg-if-dev,
                librust-foreign-types-0.3-dev,
                librust-foreign-types-shared-0.1-dev,
@@ -36,11 +36,10 @@ Build-Depends-Indep: dh-sequence-sphinxdoc <!nodoc>,
                      python3-doc <!nodoc>,
                      python3-sphinx <!nodoc>,
                      python3-sphinx-rtd-theme <!nodoc>,
-Standards-Version: 4.7.0
+Standards-Version: 4.7.2
 Vcs-Browser: https://salsa.debian.org/python-team/packages/python-cryptography
 Vcs-Git: https://salsa.debian.org/python-team/packages/python-cryptography.git
 Homepage: https://cryptography.io/
-Rules-Requires-Root: no
 Testsuite: autopkgtest-pkg-pybuild
 
 Package: python3-cryptography
@@ -51,7 +50,7 @@ Depends: python3-bcrypt,
          ${shlibs:Depends},
 Suggests: python-cryptography-doc,
           python3-cryptography-vectors,
-Description: Python library exposing cryptographic recipes and primitives (Python 3)
+Description: Python library exposing cryptographic recipes and primitives
  The cryptography library is designed to be a "one-stop-shop" for
  all your cryptographic needs in Python.
  .
@@ -65,8 +64,6 @@ Description: Python library exposing cryptographic recipes and primitives (Pytho
   - Absence of algorithms such as AES-GCM.
   - Poor introspectability, and thus poor testability.
   - Extremely error prone APIs, and bad defaults.
- .
- This package contains the Python 3 version of cryptography.
 
 Package: python-cryptography-doc
 Architecture: all
