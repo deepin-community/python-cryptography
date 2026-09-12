@@ -1,3 +1,9 @@
+python-cryptography (43.0.0-3+deb13u1deepin1) unstable; urgency=medium
+
+  * Rebuild with LTO enabled (dpkg vendor feature optimize/lto).
+
+ -- lichenggang <lichenggang@uniontech.com>  六, 12 9月 2026 16:26:53 +0800
+
 python-cryptography (43.0.0-3+deb13u1) trixie; urgency=medium
 
   * Non-maintainer upload.
